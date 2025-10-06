@@ -1,0 +1,57 @@
+{
+  "name": "pivy-backend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "preinstall": "npx npm-force-resolutions",
+    "dev": "nodemon index.js",
+    "lint": "eslint . --ext .ts",
+    "db:push": "prisma db push",
+    "db:pull": "prisma db pull",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev --name init"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@aptos-labs/siwa": "^0.4.0",
+    "@aptos-labs/ts-sdk": "^5.1.0",
+    "@aws-sdk/client-s3": "^3.855.0",
+    "@aws-sdk/s3-request-presigner": "^3.855.0",
+    "@fastify/cors": "^10.0.2",
+    "@fastify/multipart": "^9.0.3",
+    "@fastify/rate-limit": "^10.3.0",
+    "@noble/ciphers": "^2.0.1",
+    "@noble/curves": "^1.9.1",
+    "@noble/ed25519": "^1.6.0",
+    "@noble/hashes": "^1.4.0",
+    "@noble/secp256k1": "^1.7.2",
+    "@prisma/client": "^6.2.1",
+    "@thirdweb-dev/storage": "^2.0.15",
+    "axios": "^1.7.9",
+    "bignumber.js": "^9.3.1",
+    "bs58": "^6.0.0",
+    "dotenv": "^16.4.7",
+    "fastify": "^5.2.1",
+    "init": "^0.1.2",
+    "jsonwebtoken": "^9.0.2",
+    "nanoid": "^5.0.9",
+    "node-cron": "^3.0.3",
+    "rate-limiter-flexible": "^7.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.10",
+    "eslint": "^8.57.0",
+    "nodemon": "^3.1.9",
+    "prisma": "^6.2.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  },
+  "overrides": {
+    "graceful-fs": "^4.2.11"
+  }
+}

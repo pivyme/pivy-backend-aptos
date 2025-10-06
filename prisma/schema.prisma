@@ -1,0 +1,564 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum NetworkChain {
+  APTOS_MAINNET
+  APTOS_TESTNET
+}
+
+enum WalletChain {
+  APTOS
+}
+
+enum LoginMethod {
+  WALLET
+}
+
+enum ProfileImageType {
+  EMOJI_AND_COLOR
+  IMAGE
+}
+
+enum FileType {
+  THUMBNAIL
+  DELIVERABLE
+  PROFILE_IMAGE
+  DOCUMENT
+}
+
+model User {
+  id String @id @default(cuid())
+
+  username      String? @unique
+  email         String?
+
+  // Profile image configuration
+  profileImageType ProfileImageType?
+  profileImageData Json?
+
+  wallets            UserWallet[]
+  links              Link[]
+  files              File[]
+  withdrawals        Withdrawal[]
+  balanceAdjustments BalanceAdjustment[]
+  errorLogs          ErrorLog[]
+  balanceSummaries   UserBalanceSummary[]
+  nfcTag             NFCTag?
+  gasSponsorshipLogs GasSponsorshipLog[]
+  
+  // New relations for user-to-user transactions
+  paymentsPaid       Payment[] @relation("PaymentPayer")
+  withdrawalsReceived Withdrawal[] @relation("WithdrawalDestination")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UserWallet {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  walletAddress String
+  chain         WalletChain
+  loginMethod   LoginMethod
+
+  metaSpendPriv String?
+  metaViewPriv  String?
+  metaSpendPub  String?
+  metaViewPub   String?
+
+  isPrimary Boolean @default(false)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([walletAddress, chain, loginMethod])
+  @@index([userId])
+}
+
+enum LinkType {
+  SIMPLE
+  DOWNLOAD
+}
+
+enum LinkAmountType {
+  OPEN
+  FIXED
+}
+
+enum LinkStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+model Link {
+  id String @id
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  emoji           String @default("🔗")
+  backgroundColor String @default("gray")
+
+  tag         String
+  label       String
+  description String?
+
+  specialTheme String @default("default")
+  template     String @default("simple-payment")
+
+  type       LinkType
+  amountType LinkAmountType
+  goalAmount Float?
+
+  // Simplified stablecoin handling
+  isStable    Boolean @default(false)
+  stableToken String? // e.g., "USDC"
+
+  collectInfo   Boolean @default(false)
+  collectFields Json?
+
+  supportedChains NetworkChain[]
+  chainConfigs    LinkChainConfig[]
+
+  files    File[]
+  payments Payment[]
+  cctpTransactions CctpTransaction[]
+
+  viewCount  Int       @default(0)
+  status     LinkStatus @default(ACTIVE)
+  archivedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, tag, status])
+}
+
+model LinkChainConfig {
+  id String @id @default(cuid())
+
+  linkId String
+  link   Link   @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  chain NetworkChain
+
+  amount     Float?
+  goalAmount Float?
+  mintId     String?
+  mint       MintDataCache? @relation(fields: [mintId], references: [id])
+
+  isEnabled Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([linkId, chain])
+}
+
+model File {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  filename     String
+  originalName String
+  size         Int
+  contentType  String
+  s3Key        String    @unique
+  url          String
+
+  type     FileType
+  category String?
+
+  linkId String?
+  link   Link?     @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([linkId])
+  @@index([type])
+  @@index([userId, type])
+}
+
+enum ActivityType {
+  PAYMENT
+  WITHDRAWAL
+}
+
+model Payment {
+  id     String @id @default(cuid())
+  txHash String
+  chain  NetworkChain
+
+  slot      Int
+  timestamp Int
+
+  stealthOwnerPubkey String
+  ephemeralPubkey    String
+  payerPubKey        String
+  eventIndex         Int     @default(0) // To distinguish multiple payments in same transaction
+
+  payerUserId String?
+  payerUser   User?   @relation("PaymentPayer", fields: [payerUserId], references: [id], onDelete: SetNull)
+
+  mintId String
+  mint   MintDataCache @relation(fields: [mintId], references: [id])
+
+  amount BigInt
+
+  label    String?
+  memo     String?
+  note     String?
+  announce Boolean @default(false)
+
+  linkId String?
+  link   Link?   @relation(fields: [linkId], references: [id], onDelete: SetNull)
+
+  paymentInfo PaymentInfo?
+
+  isProcessed Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([txHash, chain])
+  @@index([linkId, chain, timestamp])
+  @@index([chain, timestamp])
+  @@index([stealthOwnerPubkey, chain])
+  @@index([timestamp])
+}
+
+model Withdrawal {
+  txHash String
+  chain  NetworkChain
+
+  slot      Int
+  timestamp Int
+
+  stealthOwnerPubkey String
+  destinationPubkey  String
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  destinationUserId String?
+  destinationUser   User?   @relation("WithdrawalDestination", fields: [destinationUserId], references: [id], onDelete: SetNull)
+
+  amount String
+  amountAfterFee String? // Actual amount withdrawn including fees
+
+  isProcessed Boolean @default(false)
+  isInternalTransfer Boolean @default(false)
+
+  mint   MintDataCache @relation(fields: [mintId], references: [id])
+  mintId String
+
+  createdAt DateTime @default(now())
+
+  @@id([txHash, stealthOwnerPubkey, mintId])
+  @@index([userId, chain, timestamp])
+  @@index([chain, timestamp])
+  @@index([stealthOwnerPubkey, chain])
+  @@index([timestamp])
+}
+
+model MintDataCache {
+  id String @id @default(cuid())
+
+  mintAddress String
+  chain       NetworkChain
+
+  payments           Payment[]
+  withdrawals        Withdrawal[]
+  linkChainConfigs   LinkChainConfig[]
+  balanceAdjustments BalanceAdjustment[]
+
+  name        String
+  symbol      String
+  decimals    Int
+  imageUrl    String?
+  description String?
+  uriData     Json?
+  priceUsd    Float? @default(0)
+
+  isInvalid  Boolean @default(false)
+  isVerified Boolean @default(false)
+  isNative   Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([mintAddress, chain])
+}
+
+model MainPrice {
+  id       String @id @default(cuid())
+  symbol   String @unique
+  priceUsd Float
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+
+model ErrorLog {
+  id String @id @default(cuid())
+
+  errorCode  String
+  message    String
+  statusCode Int
+  stack      String?
+  context    Json?
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  userAgent String?
+  ip        String?
+  method    String?
+  path      String?
+
+  createdAt DateTime @default(now())
+}
+
+model AddressBalanceCache {
+  id String @id @default(cuid())
+
+  address String
+  chain   NetworkChain
+
+  nativeBalance      String @default("0")
+  nativeUsdValue     Float  @default(0)
+  tokenBalances      Json   @default("[]")
+
+  lastFetched          DateTime @default(now())
+  lastPaymentTimestamp Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([address, chain])
+  @@index([chain, lastFetched])
+  @@index([address, chain, lastPaymentTimestamp])
+}
+
+model UserBalanceSummary {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chain  NetworkChain
+
+  totalBalanceUsd     Float @default(0)
+  tokensCount         Int   @default(0)
+  stealthAddressCount Int   @default(0)
+
+  lastFullRefresh      DateTime @default(now())
+  lastPaymentTimestamp Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, chain])
+  @@index([userId, chain, lastFullRefresh])
+}
+
+model PaymentInfo {
+  id String @id
+
+  collectedData Json
+
+  // Request tracking for spam/abuse prevention
+  ipAddress    String?
+  userAgent    String?
+  fingerprint  String? // Could be used for additional client fingerprinting
+
+  paymentId String? @unique
+  payment   Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([paymentId])
+  @@index([createdAt])
+  @@index([ipAddress, createdAt])
+}
+
+enum NFCTagStatus {
+  AVAILABLE
+  CLAIMED
+  DISABLED
+}
+
+model NFCTag {
+  id String @id @default(cuid())
+
+  tagId  String @unique
+  tagUrl String
+
+  userId String? @unique
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  status      NFCTagStatus @default(AVAILABLE)
+  isInjected  Boolean      @default(false)
+  viewedCount Int          @default(0)
+
+  claimedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tagId])
+  @@index([userId])
+  @@index([status])
+  @@index([isInjected])
+  @@index([viewedCount])
+}
+
+model NsCache {
+  id String @id @default(cuid())
+
+  cacheKey  String
+  cacheType String
+  data      Json
+  expiresAt DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([cacheKey, cacheType])
+  @@index([expiresAt])
+}
+
+model BalanceAdjustment {
+  id                 String       @id @default(cuid())
+  stealthOwnerPubkey String
+  chain              NetworkChain
+  mintAddress        String
+  adjustmentAmount   String
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  mintId String
+  mint   MintDataCache @relation(fields: [mintId], references: [id])
+
+  @@index([userId])
+}
+
+model GasSponsorshipLog {
+  id        String       @id @default(cuid())
+  txHash    String
+  chain     NetworkChain
+  userId    String?
+  user      User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sender    String
+  gasFee    BigInt
+  timestamp Int
+
+  createdAt DateTime @default(now())
+
+  @@unique([txHash, sender])
+  @@index([userId, chain, createdAt])
+  @@index([chain, createdAt])
+}
+
+enum ProcessingType {
+  PAYMENT_LINK_SCAN
+  PAYMENT_PAYER_USER_ID_SCAN
+  WITHDRAWAL_USER_ID_SCAN
+  WITHDRAWAL_DESTINATION_USER_ID_SCAN
+}
+
+model ProcessingLog {
+  id String @id @default(cuid())
+
+  processId String // paymentTxHash or withdrawalId composite key
+  type ProcessingType
+  processedCount Int @default(0)
+  maxRetries Int @default(5)
+  isProcessed Boolean @default(false)
+
+  lastProcessedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([processId, type])
+  @@index([isProcessed, type])
+  @@index([processedCount, isProcessed])
+}
+
+enum CctpTransactionStatus {
+  SUBMITTED
+  PROCESSING
+  ATTESTATION_PENDING
+  COMPLETING
+  COMPLETED
+  FAILED
+}
+
+model CctpTransaction {
+  id String @id @default(cuid())
+
+  srcDomain Int
+  srcTxHash String
+  destTxHash String?
+  amount String
+  attestation String // JSON string of attestation data
+  usdcAddress String
+  chain NetworkChain
+  status CctpTransactionStatus @default(SUBMITTED)
+  chainSpecificData String // JSON string for chain-specific fields
+
+  linkId String
+  link Link @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  submittedAt DateTime @default(now())
+  processedAt DateTime? // When attestation processing started
+  completedAt DateTime? // When final transaction was completed
+  errorMessage String?
+  retryCount Int @default(0)
+  lastRetryAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([srcTxHash, linkId])
+  @@index([status])
+  @@index([chain])
+  @@index([submittedAt])
+  @@index([linkId])
+}
+
+model WithdrawalGroup {
+  id String @id @default(cuid())
+
+  userId String
+  chain NetworkChain
+  txHashes String[] // Array of transaction hashes that belong to this group
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, chain])
+  @@index([chain])
+}
